@@ -1,9 +1,13 @@
 # OpenVPN Client for Docker
 
-Archived in favor of [a WireGuard version](https://github.com/wfg/docker-wireguard).
+Docker OpenVPN Client container.
+
+Forked from [wfg/docker-openvpn-client](https://github.com/wfg/docker-openvpn-client).
+
+~~Archived in favor of [a WireGuard version](https://github.com/wfg/docker-wireguard).~~
 
 ## What is this and what does it do?
-[`ghcr.io/wfg/openvpn-client`](https://github.com/users/wfg/packages/container/package/openvpn-client) is a containerized OpenVPN client.
+[`docker-openvpn-client`](https://github.com/ggn1992/docker-openvpn-client) is a containerized OpenVPN client.
 It has a kill switch built with `iptables` that kills Internet connectivity to the container if the VPN tunnel goes down for any reason.
 
 This image requires you to supply the necessary OpenVPN configuration file(s).
@@ -11,22 +15,24 @@ Because of this, any VPN provider should work.
 
 If you find something that doesn't work or have an idea for a new feature, issues and **pull requests are welcome** (however, I'm not promising they will be merged).
 
+### Versions
+
+- alpine:3.20
+- openvpn:2.6.11 
+
 ## Why?
 Having a containerized VPN client lets you use container networking to easily choose which applications you want using the VPN instead of having to set up split tunnelling.
 It also keeps you from having to install an OpenVPN client on the underlying host.
 
 ## How do I use it?
 ### Getting the image
-You can either pull it from GitHub Container Registry or build it yourself.
-
-To pull it from GitHub Container Registry, run
-```
-docker pull ghcr.io/wfg/openvpn-client
-```
+You can build it yourself.
 
 To build it yourself, run
 ```
-docker build -t ghcr.io/wfg/openvpn-client https://github.com/wfg/docker-openvpn-client.git#:build
+git clone https://github.com/ggn1992/docker-openvpn-client.git
+cd docker-openvpn-client
+docker build -t ggn1992/docker-openvpn-client build/.
 ```
 
 ### Creating and running a container
@@ -41,14 +47,15 @@ docker run --detach \
   --cap-add=NET_ADMIN \
   --device=/dev/net/tun \
   --volume <path/to/config/dir>:/config \
-  ghcr.io/wfg/openvpn-client
+  -e ALLOWED_SUBNETS=192.168.10.0/24 \
+  ggn1992/docker-openvpn-client
 ```
 
 #### `docker-compose`
 ```yaml
 services:
   openvpn-client:
-    image: ghcr.io/wfg/openvpn-client
+    image: ggn1992/docker-openvpn-client
     container_name: openvpn-client
     cap_add:
       - NET_ADMIN
@@ -56,6 +63,8 @@ services:
       - /dev/net/tun
     volumes:
       - <path/to/config/dir>:/config
+    environment:
+      - ALLOWED_SUBNETS=192.168.10.0/24
     restart: unless-stopped
 ```
 
@@ -64,6 +73,7 @@ services:
 | --- | --- | --- |
 | `ALLOWED_SUBNETS` | | A list of one or more comma-separated subnets (e.g. `192.168.0.0/24,192.168.1.0/24`) to allow outside of the VPN tunnel. |
 | `AUTH_SECRET` | | Docker secret that contains the credentials for accessing the VPN. |
+| `CLEANUP_CONFIGS` | `on` | If your VPN provider provide config files with update_resolv_conf scripts, they won't run and the Docker instance will stop. Cleanup configs screens all your config files and will correct them. |
 | `CONFIG_FILE` | | The OpenVPN configuration file or search pattern. If unset, a random `.conf` or `.ovpn` file will be selected. |
 | `KILL_SWITCH` | `on` | Whether or not to enable the kill switch. Set to any "truthy" value[1] to enable. |
 
@@ -100,11 +110,30 @@ ports:
 In both cases, replace `<host_port>` and `<container_port>` with the port used by your connected container.
 
 ### Verifying functionality
-Once you have container running `ghcr.io/wfg/openvpn-client`, run the following command to spin up a temporary container using `openvpn-client` for networking.
+Once you have container running `ggn1992/docker-openvpn-client`, run the following command to spin up a temporary container using `openvpn-client` for networking.
 The `wget -qO - ifconfig.me` bit will return the public IP of the container (and anything else using `openvpn-client` for networking).
 You should see an IP address owned by your VPN provider.
 ```
 docker run --rm -it --network=container:openvpn-client alpine wget -qO - ifconfig.me
+```
+
+#### DNS Leak Test
+The [test shows DNS leaks](https://github.com/macvk/dnsleaktest) and your external IP. If you use the same ASN for DNS and connection - you have no leak, otherwise here might be a problem.
+```
+❯ docker exec -it openvpn-client sh -c "apk add curl && curl https://raw.githubusercontent.com/macvk/dnsleaktest/master/dnsleaktest.sh -o dnsleaktest.sh && chmod +x dnsleaktest.sh && ./dnsleaktest.sh"
+
+OK: 27 MiB in 52 packages
+% Total % Received % Xferd Average Speed Time Time Time Current
+Dload Upload Total Spent Left Speed
+100 3219 100 3219 0 0 10618 0 --:--:-- --:--:-- --:--:-- 10658
+Your IP:
+xxx.xxx.xxx.xxx [Censored, ASxxxx Censored]
+
+You use 1 DNS server:
+xxx.xxx.xxx.xxx [Censored, ASxxxx Censored]
+
+Conclusion:
+DNS is not leaking.
 ```
 
 ### Troubleshooting
